@@ -399,12 +399,12 @@ export async function exportToPdf(markdown: string, filename = "document.pdf") {
           doc.setDrawColor(...colors.border);
           doc.setLineWidth(token.depth === 1 ? 2 : 1);
           doc.line(margin, y, pageWidth - margin, y);
-          y += 6;
+          y += token.depth === 1 ? 12 : 10; // More space after H1 underline
         } else {
           y += 4;
         }
         
-        y += 8;
+        y += token.depth === 1 ? 4 : 8; // Less space after H1, normal for others
         break;
       }
 

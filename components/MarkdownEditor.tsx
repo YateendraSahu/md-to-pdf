@@ -85,7 +85,7 @@ export default function MarkdownEditor() {
 
         <div className="grid grid-cols-1 gap-4">
           <textarea
-            className="w-full h-96 p-4 font-mono text-sm border border-gray-300 rounded-lg bg-white resize-y focus:outline-none focus:ring-2 focus:ring-blue-400"
+            className="w-full h-96 p-4 font-mono text-black text-sm border border-gray-300 rounded-lg bg-white resize-y focus:outline-none focus:ring-2 focus:ring-blue-400"
             value={markdown}
             onChange={(e) => setMarkdown(e.target.value)}
             placeholder="Paste your markdown here..."
@@ -97,7 +97,7 @@ export default function MarkdownEditor() {
               type="text"
               value={filename}
               onChange={(e) => setFilename(e.target.value)}
-              className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+              className="border border-gray-300 rounded-lg text-black px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
               placeholder="filename"
               aria-label="Output filename"
             />
