@@ -2,31 +2,64 @@
 
 import { useState } from "react";
 
-const SAMPLE = `# Hello World
+const SAMPLE = `# Professional Markdown to PDF Converter
 
-This is a **markdown** to PDF converter using *jsPDF*.
+Convert your markdown documents into **beautiful**, *professional* PDFs with full formatting support.
 
-## Features
+## Key Features
 
-- No canvas or screenshots
-- Pure text rendering
-- Supports headings, lists, code blocks
+- **Bold** and *italic* text styling
+- ~~Strikethrough~~ text
+- \`inline code\` with syntax highlighting
+- [Clickable links](https://example.com)
+- Task lists with checkboxes
+- Tables with alternating row colors
+- Nested lists and more!
 
-## Code Example
+## Task List Example
 
-\`\`\`
-function greet(name) {
-  return "Hello, " + name;
+- [x] Support all markdown elements
+- [x] Add professional styling
+- [ ] Deploy to production
+- [ ] Add custom themes
+
+## Code Block with Syntax
+
+\`\`\`javascript
+function calculateTotal(items) {
+  return items.reduce((sum, item) => {
+    return sum + item.price * item.quantity;
+  }, 0);
 }
 \`\`\`
 
-> This is a blockquote with some important info.
+## Table Example
+
+| Feature | Status | Priority |
+|---------|--------|----------|
+| Bold/Italic | Done | High |
+| Tables | Done | High |
+| Links | Done | Medium |
+| Code Blocks | Done | Low |
+
+> **Pro Tip:** This blockquote demonstrates how quoted text appears with a beautiful accent border and background.
 
 ---
 
-### Paragraph
+## Nested Lists
 
-Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.
+1. First level item
+   - Nested bullet point
+   - Another nested item
+2. Second level item
+   - More nesting
+     - Even deeper nesting
+
+### Typography & Spacing
+
+The PDF uses **Helvetica font** for a clean, professional look with carefully tuned spacing, colors, and layout. Headings have proper hierarchy, code blocks use dark themes, and tables are clean and readable.
+
+**Premium Design** • **Fast Export** • **100% Client-Side**
 `;
 
 export default function MarkdownEditor() {
