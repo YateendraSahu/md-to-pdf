@@ -9,57 +9,40 @@ export async function exportToPdf(markdown: string, filename = "document.pdf") {
   const pdfDoc = await PDFDocument.create();
   pdfDoc.registerFontkit(fontkit as any);
 
-  // FONT LOADER WITH MULTIPLE CDNs FOR STABILITY
-  const fontUrls = {
-    regular: 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/inter/static/Inter-Regular.ttf',
-    bold: 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/inter/static/Inter-Bold.ttf',
-    italic: 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/inter/static/Inter-Italic.ttf'
+  // START WITH STANDARD FONTS (Ensures zero-delay and offline stability)
+  let fonts = {
+    regular: await pdfDoc.embedFont(StandardFonts.Helvetica),
+    bold: await pdfDoc.embedFont(StandardFonts.HelveticaBold),
+    italic: await pdfDoc.embedFont(StandardFonts.HelveticaOblique),
+    mono: await pdfDoc.embedFont(StandardFonts.Courier),
   };
 
-  const safeFetch = async (url: string) => {
-    try {
-      const res = await fetch(url);
-      if (!res.ok) throw new Error("Fetch failed");
-      return await res.arrayBuffer();
-    } catch (e) {
-      // Try fallback URL if needed (omitted for brevity but logic is here)
-      throw e;
-    }
-  };
-
-  let fonts: any;
+  // ATTEMPT TO UPGRADE TO INTER (Non-blocking, silent failure)
   try {
-    const [regBytes, boldBytes, italBytes] = await Promise.all([
-      safeFetch(fontUrls.regular),
-      safeFetch(fontUrls.bold),
-      safeFetch(fontUrls.italic)
+    const fontUrls = {
+      regular: 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/inter/static/Inter-Regular.ttf',
+      bold: 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/inter/static/Inter-Bold.ttf',
+    };
+    const [regB, boldB] = await Promise.all([
+      fetch(fontUrls.regular).then(r => r.ok ? r.arrayBuffer() : null).catch(() => null),
+      fetch(fontUrls.bold).then(r => r.ok ? r.arrayBuffer() : null).catch(() => null),
     ]);
-    fonts = {
-      regular: await pdfDoc.embedFont(regBytes),
-      bold: await pdfDoc.embedFont(boldBytes),
-      italic: await pdfDoc.embedFont(italBytes),
-      mono: await pdfDoc.embedFont(StandardFonts.Courier),
-    };
+    if (regB) fonts.regular = await pdfDoc.embedFont(regB);
+    if (boldB) fonts.bold = await pdfDoc.embedFont(boldB);
   } catch (e) {
-    console.error("Font loading failure, falling back to standard", e);
-    fonts = {
-      regular: await pdfDoc.embedFont(StandardFonts.Helvetica),
-      bold: await pdfDoc.embedFont(StandardFonts.HelveticaBold),
-      italic: await pdfDoc.embedFont(StandardFonts.HelveticaOblique),
-      mono: await pdfDoc.embedFont(StandardFonts.Courier),
-    };
+    console.warn("Silent Upgrade failed: using standard fonts.");
   }
 
   const pageSize: [number, number] = [595.28, 841.89];
   let page = pdfDoc.addPage(pageSize);
   const { width, height } = page.getSize();
   
-  const margin = 50; // Reference uses larger margins
+  const margin = 50;
   let y = height - margin;
   const contentWidth = width - (margin * 2);
 
   const colors = {
-    primary: rgb(0.12, 0.24, 0.59), // Deep Blue for headers
+    primary: rgb(0.12, 0.24, 0.59),
     text: rgb(0.15, 0.17, 0.21),
     subtle: rgb(0.4, 0.45, 0.5),
     border: rgb(0.9, 0.92, 0.94),
@@ -76,7 +59,7 @@ export async function exportToPdf(markdown: string, filename = "document.pdf") {
   };
 
   const checkPageEdge = (needed: number) => {
-    if (y - needed < margin + 40) { // Keep space for footer
+    if (y - needed < margin + 40) {
       addFooter();
       page = pdfDoc.addPage(pageSize);
       y = height - margin;
@@ -89,11 +72,8 @@ export async function exportToPdf(markdown: string, filename = "document.pdf") {
     const fontSize = 9;
     const textWidth = fonts.regular.widthOfTextAtSize(footerText, fontSize);
     page.drawText(footerText, {
-      x: width / 2 - textWidth / 2,
-      y: margin / 2,
-      size: fontSize,
-      font: fonts.regular,
-      color: colors.subtle,
+      x: width / 2 - textWidth / 2, y: margin / 2,
+      size: fontSize, font: fonts.regular, color: colors.subtle,
     });
   };
 
@@ -116,20 +96,16 @@ export async function exportToPdf(markdown: string, filename = "document.pdf") {
     return null;
   }
 
-  const safeWidth = (font: PDFFont, text: string, size: number) => {
-    try {
-      return font.widthOfTextAtSize(text, size);
-    } catch (e) {
-      // Return an estimated width based on character count if font fails
-      return text.length * (size * 0.6);
-    }
-  };
-
   function getFontForState(bold: boolean, italic: boolean) {
     if (bold) return fonts.bold;
     if (italic) return fonts.italic;
     return fonts.regular;
   }
+
+  const safeWidth = (font: PDFFont, text: string, size: number) => {
+    try { return font.widthOfTextAtSize(text, size); } 
+    catch (e) { return text.length * (size * 0.6); }
+  };
 
   async function drawTextSafe(text: string, xPos: number, size: number, font: PDFFont, color: any, maxWidth: number, startX: number, lineHeight: number = 1.4) {
     const regex = emojiRegex();
@@ -148,13 +124,9 @@ export async function exportToPdf(markdown: string, filename = "document.pdf") {
         const words = seg.content.split(/(\s+)/);
         for (const word of words) {
           if (!word) continue;
-          let wordWidth;
-          try { wordWidth = font.widthOfTextAtSize(word, size); } catch(e) { wordWidth = size; }
-          
+          let wordWidth = safeWidth(font, word, size);
           if (currentX + wordWidth > startX + maxWidth && word.trim().length > 0) {
-            y -= size * lineHeight;
-            currentX = startX;
-            checkPageEdge(size * lineHeight);
+            y -= size * lineHeight; currentX = startX; checkPageEdge(size * lineHeight);
           }
           try {
             page.drawText(word, { x: currentX, y: y - size, size, font, color });
@@ -179,17 +151,34 @@ export async function exportToPdf(markdown: string, filename = "document.pdf") {
     return currentX;
   }
 
+  async function drawImageSafe(url: string, maxWidth: number) {
+    try {
+      const resp = await fetch(url);
+      const bytes = new Uint8Array(await resp.arrayBuffer());
+      let img = url.toLowerCase().endsWith('.png') ? await pdfDoc.embedPng(bytes) : await pdfDoc.embedJpg(bytes);
+      const dims = img.scale(1);
+      const scale = Math.min(maxWidth / dims.width, 1.0);
+      const finalW = dims.width * scale; const finalH = dims.height * scale;
+      checkPageEdge(finalH + 20);
+      page.drawImage(img, { x: margin + (maxWidth - finalW) / 2, y: y - finalH - 5, width: finalW, height: finalH });
+      y -= finalH + 15;
+    } catch (e) {
+      console.error("Image Draw Error:", e);
+    }
+  }
+
   async function renderInlineTokens(tokens: any[], x: number, maxWidth: number, baseStyle: any) {
     let currentX = x;
-    let bold = false; let italic = false;
+    let bold = baseStyle.font === fonts.bold;
+    let italic = baseStyle.font === fonts.italic;
     const processTokens = async (ts: any[]) => {
       for (const t of ts) {
         if (t.type === 'strong') { bold = true; await processTokens(t.tokens || []); bold = false; }
         else if (t.type === 'em') { italic = true; await processTokens(t.tokens || []); italic = false; }
         else if (t.type === 'del') {
-          const startX = currentX;
+          const sX = currentX;
           currentX = await drawTextSafe(t.text, currentX, baseStyle.size, getFontForState(bold, italic), baseStyle.color, maxWidth, x, baseStyle.lineHeight);
-          page.drawLine({ start: { x: startX, y: y - baseStyle.size + (baseStyle.size / 3) }, end: { x: currentX, y: y - baseStyle.size + (baseStyle.size / 3) }, thickness: 0.5, color: baseStyle.color });
+          page.drawLine({ start: { x: sX, y: y - baseStyle.size + (baseStyle.size/3) }, end: { x: currentX, y: y - baseStyle.size + (baseStyle.size/3) }, thickness: 0.5, color: baseStyle.color });
         } else if (t.type === 'codespan') {
           const w = safeWidth(fonts.mono, t.text, baseStyle.size * 0.9);
           if (currentX + w > x + maxWidth) { y -= baseStyle.size * baseStyle.lineHeight; currentX = x; checkPageEdge(baseStyle.size * baseStyle.lineHeight); }
@@ -199,6 +188,9 @@ export async function exportToPdf(markdown: string, filename = "document.pdf") {
         } else if (t.type === 'link') {
           const oldCol = baseStyle.color; baseStyle.color = colors.primary;
           await processTokens(t.tokens || []); baseStyle.color = oldCol;
+        } else if (t.type === 'image') {
+          await drawImageSafe(t.href, maxWidth);
+          currentX = x;
         } else if (t.type === 'text' || t.type === 'escape') {
           if (t.tokens && t.tokens.length > 0) await processTokens(t.tokens);
           else currentX = await drawTextSafe(t.text, currentX, baseStyle.size, getFontForState(bold, italic), baseStyle.color, maxWidth, x, baseStyle.lineHeight);
@@ -212,28 +204,30 @@ export async function exportToPdf(markdown: string, filename = "document.pdf") {
     let index = 1;
     for (const item of items) {
       const indent = level * 24;
-      const bullet = ordered ? `${index}. ` : '● '; // Reference uses solid dots
-      const bulletCol = colors.subtle;
       checkPageEdge(styles.p.size * styles.p.lineHeight);
       
       const bX = margin + indent;
-      await drawTextSafe(bullet, bX, styles.p.size, fonts.regular, bulletCol, contentWidth, bX);
-      const bW = safeWidth(fonts.regular, bullet, styles.p.size);
+      if (ordered) {
+        await drawTextSafe(`${index}. `, bX, styles.p.size, fonts.regular, colors.subtle, contentWidth, bX);
+      } else {
+        // Draw vector bullet instead of text bullet to avoid encoding crash
+        page.drawCircle({ x: bX + 5, y: y - (styles.p.size/2) - 2, size: 2.5, color: colors.subtle });
+      }
       
-      let xOff = indent + bW + 8;
+      let xOff = indent + 18;
       
       if (item.task) {
-        const cbSize = 9; const cbY = y - styles.p.size + 1;
-        page.drawRectangle({ x: margin + xOff, y: cbY, width: cbSize, height: cbSize, borderWidth: 0.8, borderColor: colors.subtle });
+        const cbS = 9; const cbY = y - styles.p.size + 1;
+        page.drawRectangle({ x: margin + xOff, y: cbY, width: cbS, height: cbS, borderWidth: 0.8, borderColor: colors.subtle });
         if (item.checked) {
           page.drawLine({ start: { x: margin + xOff + 2, y: cbY + 4 }, end: { x: margin + xOff + 4, y: cbY + 2 }, thickness: 1.2, color: colors.primary });
           page.drawLine({ start: { x: margin + xOff + 4, y: cbY + 2 }, end: { x: margin + xOff + 7, y: cbY + 7 }, thickness: 1.2, color: colors.primary });
         }
-        xOff += cbSize + 10;
+        xOff += cbS + 10;
       }
 
       await renderInlineTokens(item.tokens || [], margin + xOff, contentWidth - xOff, styles.p);
-      y -= styles.p.size * styles.p.lineHeight; // Fixed vertical spacing for lists
+      y -= styles.p.size * styles.p.lineHeight;
       
       if (item.tokens) {
         const sub = item.tokens.find((t: any) => t.type === 'list');
@@ -254,7 +248,7 @@ export async function exportToPdf(markdown: string, filename = "document.pdf") {
         y -= hS.spacing;
         break;
       case 'paragraph':
-        checkPageEdge(styles.p.size * 2);
+        checkPageEdge(styles.p.size * 2.5);
         await renderInlineTokens(t.tokens || [], margin, contentWidth, styles.p);
         y -= styles.p.spacing;
         break;
@@ -263,12 +257,12 @@ export async function exportToPdf(markdown: string, filename = "document.pdf") {
         y -= 12;
         break;
       case 'code':
-        const lines = t.text.split('\n');
-        const h = lines.length * styles.mono.spacing + 30;
+        const lns = t.text.split('\n');
+        const h = lns.length * styles.mono.spacing + 30;
         checkPageEdge(h);
         page.drawRectangle({ x: margin - 10, y: y - h, width: contentWidth + 20, height: h, color: styles.mono.bg });
-        y -= 20;
-        for (const l of lines) {
+        y -= 25;
+        for (const l of lns) {
           await drawTextSafe(l, margin, styles.mono.size, fonts.mono, styles.mono.color, contentWidth, margin, 1.0);
           y -= styles.mono.spacing;
         }
@@ -276,45 +270,21 @@ export async function exportToPdf(markdown: string, filename = "document.pdf") {
         break;
       case 'table':
         const colW = contentWidth / t.header.length; const rowH = 28;
-        const totalH = (t.rows.length + 1) * rowH;
-        checkPageEdge(totalH + 20);
-        // Header
+        checkPageEdge((t.rows.length + 1) * rowH + 20);
         page.drawRectangle({ x: margin, y: y - rowH, width: contentWidth, height: rowH, color: colors.headerBg });
         for (let i = 0; i < t.header.length; i++) {
-          const oldY = y;
-          y -= 9; 
-          await drawTextSafe(
-            t.header[i].text || String(t.header[i]), 
-            margin + i * colW + 10, 
-            10, 
-            fonts.bold, 
-            colors.primary, 
-            colW - 20, 
-            margin + i * colW + 10,
-            1.0
-          );
+          const oldY = y; y -= 9;
+          await drawTextSafe(t.header[i].text || String(t.header[i]), margin + i * colW + 10, 10, fonts.bold, colors.primary, colW - 20, margin + i * colW + 10, 1.0);
           y = oldY;
         }
         y -= rowH;
-        // Rows
         for (let ri = 0; ri < t.rows.length; ri++) {
           const row = t.rows[ri];
           if (ri % 2 === 1) page.drawRectangle({ x: margin, y: y - rowH, width: contentWidth, height: rowH, color: colors.stripe });
-          
           for (let ci = 0; ci < row.length; ci++) {
             const cell = row[ci];
-            const oldY = y;
-            y -= 9; // Padding to center 10pt text in 28pt row
-            await drawTextSafe(
-              cell.text || String(cell), 
-              margin + ci * colW + 10, 
-              10, 
-              fonts.regular, 
-              colors.text, 
-              colW - 20, 
-              margin + ci * colW + 10,
-              1.0
-            );
+            const oldY = y; y -= 9;
+            await drawTextSafe(cell.text || String(cell), margin + ci * colW + 10, 10, fonts.regular, colors.text, colW - 20, margin + ci * colW + 10, 1.0);
             y = oldY;
           }
           y -= rowH;
@@ -327,10 +297,13 @@ export async function exportToPdf(markdown: string, filename = "document.pdf") {
         y -= 30;
         break;
       case 'blockquote':
-        const xO = 26; const startY = y;
-        await renderInlineTokens(t.tokens || [], margin + xO, contentWidth - xO, { ...styles.p, color: colors.subtle });
+        const startY = y;
+        await renderInlineTokens(t.tokens || [], margin + 26, contentWidth - 26, { ...styles.p, color: colors.subtle });
         page.drawLine({ start: { x: margin + 10, y: startY }, end: { x: margin + 10, y: y + 10 }, thickness: 3, color: colors.primary });
         y -= 10;
+        break;
+      case 'image':
+        await drawImageSafe(t.href, contentWidth);
         break;
     }
   }
