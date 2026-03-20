@@ -1,595 +1,539 @@
 "use client";
 
-type Token =
-  | { type: "heading"; depth: number; text: string }
-  | { type: "paragraph"; text: string; segments: TextSegment[] }
-  | { type: "list_item"; text: string; segments: TextSegment[]; ordered: boolean; level: number; checked?: boolean }
-  | { type: "hr" }
-  | { type: "code"; text: string; language?: string }
-  | { type: "blockquote"; text: string; segments: TextSegment[] }
-  | { type: "table"; headers: string[]; rows: string[][] };
-
-type TextSegment = {
-  text: string;
-  bold?: boolean;
-  italic?: boolean;
-  code?: boolean;
-  strikethrough?: boolean;
-  link?: string;
-};
-
-function parseInlineStyles(text: string): TextSegment[] {
-  const segments: TextSegment[] = [];
-  let current = "";
-  let i = 0;
-
-  while (i < text.length) {
-    // Bold **text** or __text__
-    if ((text[i] === "*" && text[i + 1] === "*") || (text[i] === "_" && text[i + 1] === "_")) {
-      if (current) {
-        segments.push({ text: current });
-        current = "";
-      }
-      const delimiter = text[i];
-      i += 2;
-      let boldText = "";
-      while (i < text.length && !(text[i] === delimiter && text[i + 1] === delimiter)) {
-        boldText += text[i++];
-      }
-      if (boldText) segments.push({ text: boldText, bold: true });
-      i += 2;
-      continue;
-    }
-
-    // Italic *text* or _text_
-    if (text[i] === "*" || text[i] === "_") {
-      if (current) {
-        segments.push({ text: current });
-        current = "";
-      }
-      const delimiter = text[i];
-      i++;
-      let italicText = "";
-      while (i < text.length && text[i] !== delimiter) {
-        italicText += text[i++];
-      }
-      if (italicText) segments.push({ text: italicText, italic: true });
-      i++;
-      continue;
-    }
-
-    // Inline code `text`
-    if (text[i] === "`") {
-      if (current) {
-        segments.push({ text: current });
-        current = "";
-      }
-      i++;
-      let codeText = "";
-      while (i < text.length && text[i] !== "`") {
-        codeText += text[i++];
-      }
-      if (codeText) segments.push({ text: codeText, code: true });
-      i++;
-      continue;
-    }
-
-    // Strikethrough ~~text~~
-    if (text[i] === "~" && text[i + 1] === "~") {
-      if (current) {
-        segments.push({ text: current });
-        current = "";
-      }
-      i += 2;
-      let strikeText = "";
-      while (i < text.length && !(text[i] === "~" && text[i + 1] === "~")) {
-        strikeText += text[i++];
-      }
-      if (strikeText) segments.push({ text: strikeText, strikethrough: true });
-      i += 2;
-      continue;
-    }
-
-    // Links [text](url)
-    if (text[i] === "[") {
-      if (current) {
-        segments.push({ text: current });
-        current = "";
-      }
-      i++;
-      let linkText = "";
-      while (i < text.length && text[i] !== "]") {
-        linkText += text[i++];
-      }
-      i++; // skip ]
-      if (text[i] === "(") {
-        i++;
-        let url = "";
-        while (i < text.length && text[i] !== ")") {
-          url += text[i++];
-        }
-        i++;
-        if (linkText) segments.push({ text: linkText, link: url });
-      }
-      continue;
-    }
-
-    current += text[i++];
-  }
-
-  if (current) segments.push({ text: current });
-  return segments.length > 0 ? segments : [{ text }];
-}
-
-function parseMarkdown(md: string): Token[] {
-  const tokens: Token[] = [];
-  const lines = md.split("\n");
-  let i = 0;
-
-  while (i < lines.length) {
-    const line = lines[i];
-
-    // Heading
-    const headingMatch = line.match(/^(#{1,6})\s+(.*)/);
-    if (headingMatch) {
-      tokens.push({ type: "heading", depth: headingMatch[1].length, text: headingMatch[2].trim() });
-      i++;
-      continue;
-    }
-
-    // HR
-    if (/^[-*_]{3,}$/.test(line.trim())) {
-      tokens.push({ type: "hr" });
-      i++;
-      continue;
-    }
-
-    // Code block
-    if (line.startsWith("```")) {
-      const langMatch = line.match(/```(\w+)?/);
-      const language = langMatch?.[1];
-      const codeLines: string[] = [];
-      i++;
-      while (i < lines.length && !lines[i].startsWith("```")) {
-        codeLines.push(lines[i]);
-        i++;
-      }
-      tokens.push({ type: "code", text: codeLines.join("\n"), language });
-      i++;
-      continue;
-    }
-
-    // Table
-    if (line.includes("|") && lines[i + 1]?.match(/^\|?[\s:-]+\|/)) {
-      const headers = line
-        .split("|")
-        .map((h) => h.trim())
-        .filter((h) => h);
-      i += 2; // skip header and separator
-      const rows: string[][] = [];
-      while (i < lines.length && lines[i].includes("|")) {
-        const row = lines[i]
-          .split("|")
-          .map((c) => c.trim())
-          .filter((c) => c);
-        if (row.length > 0) rows.push(row);
-        i++;
-      }
-      tokens.push({ type: "table", headers, rows });
-      continue;
-    }
-
-    // Blockquote
-    if (line.startsWith("> ")) {
-      const text = line.slice(2).trim();
-      tokens.push({ type: "blockquote", text, segments: parseInlineStyles(text) });
-      i++;
-      continue;
-    }
-
-    // Task list or List item
-    const taskMatch = line.match(/^(\s*)([-*+]|\d+\.)\s+\[([x ])\]\s+(.*)/);
-    if (taskMatch) {
-      const level = Math.floor(taskMatch[1].length / 2);
-      const checked = taskMatch[3] === "x";
-      const text = taskMatch[4].trim();
-      tokens.push({
-        type: "list_item",
-        text,
-        segments: parseInlineStyles(text),
-        ordered: /^\d+\./.test(taskMatch[2]),
-        level,
-        checked,
-      });
-      i++;
-      continue;
-    }
-
-    const listMatch = line.match(/^(\s*)([-*+]|\d+\.)\s+(.*)/);
-    if (listMatch) {
-      const level = Math.floor(listMatch[1].length / 2);
-      const text = listMatch[3].trim();
-      tokens.push({
-        type: "list_item",
-        text,
-        segments: parseInlineStyles(text),
-        ordered: /^\d+\./.test(listMatch[2]),
-        level,
-      });
-      i++;
-      continue;
-    }
-
-    // Paragraph (skip blank lines)
-    if (line.trim() !== "") {
-      tokens.push({ type: "paragraph", text: line.trim(), segments: parseInlineStyles(line.trim()) });
-    }
-    i++;
-  }
-
-  return tokens;
-}
-
-// Load professional fonts (TTF format for jsPDF compatibility)
-async function loadFonts() {
-  try {
-    // Using Roboto from Google Fonts as TTF
-    const [regularFont, boldFont] = await Promise.all([
-      fetch("https://github.com/google/fonts/raw/main/apache/roboto/static/Roboto-Regular.ttf").then(
-        (r) => r.arrayBuffer()
-      ),
-      fetch("https://github.com/google/fonts/raw/main/apache/roboto/static/Roboto-Bold.ttf").then(
-        (r) => r.arrayBuffer()
-      ),
-    ]);
-
-    const toBase64 = (buffer: ArrayBuffer) =>
-      btoa(new Uint8Array(buffer).reduce((data, byte) => data + String.fromCharCode(byte), ""));
-
-    return {
-      regular: toBase64(regularFont),
-      bold: toBase64(boldFont),
-    };
-  } catch (error) {
-    console.warn("Failed to load fonts:", error);
-    return null;
-  }
-}
+import { PDFDocument, rgb, StandardFonts, PDFPage, PDFFont } from 'pdf-lib';
+import * as fontkit from 'fontkit';
+import { marked } from 'marked';
 
 export async function exportToPdf(markdown: string, filename = "document.pdf") {
-  const { jsPDF } = await import("jspdf");
-  const doc = new jsPDF({ unit: "pt", format: "a4" });
+  const pdfDoc = await PDFDocument.create();
+  pdfDoc.registerFontkit(fontkit as any);
 
-  // Use built-in fonts for maximum compatibility
-  const useCustomFont = false;
+  let fonts: any;
+  try {
+    const fetchFont = async (url: string) => {
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error(`Failed to fetch font: ${url}`);
+      return await resp.arrayBuffer();
+    };
 
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const pageHeight = doc.internal.pageSize.getHeight();
-  const margin = 40;
-  const contentWidth = pageWidth - margin * 2;
-  let y = margin + 10;
-  let pageNumber = 1;
+    // Load professional Inter font to support full Unicode (arrows, symbols, etc.)
+    const baseUrl = 'https://cdn.jsdelivr.net/gh/rsms/inter@v3.19/docs/font-files';
+    const [regBytes, boldBytes, italicBytes] = await Promise.all([
+      fetchFont(`${baseUrl}/Inter-Regular.otf`),
+      fetchFont(`${baseUrl}/Inter-Bold.otf`),
+      fetchFont(`${baseUrl}/Inter-Italic.otf`),
+    ]);
 
-  const colors = {
-    primary: [30, 41, 59] as [number, number, number], // slate-800
-    secondary: [71, 85, 105] as [number, number, number], // slate-600
-    accent: [59, 130, 246] as [number, number, number], // blue-500
-    muted: [148, 163, 184] as [number, number, number], // slate-400
-    background: [248, 250, 252] as [number, number, number], // slate-50
-    border: [226, 232, 240] as [number, number, number], // slate-200
-    codeBackground: [30, 41, 59] as [number, number, number], // slate-800
-    codeText: [226, 232, 240] as [number, number, number], // slate-200
+    fonts = {
+      regular: await pdfDoc.embedFont(regBytes),
+      bold: await pdfDoc.embedFont(boldBytes),
+      italic: await pdfDoc.embedFont(italicBytes),
+      boldItalic: await pdfDoc.embedFont(boldBytes), // Using bold as fallback if bold-italic fetch failed
+      mono: await pdfDoc.embedFont(StandardFonts.Courier),
+    };
+  } catch (e) {
+    console.warn("Custom fonts failed, falling back to standard Helvetica:", e);
+    fonts = {
+      regular: await pdfDoc.embedFont(StandardFonts.Helvetica),
+      bold: await pdfDoc.embedFont(StandardFonts.HelveticaBold),
+      italic: await pdfDoc.embedFont(StandardFonts.HelveticaOblique),
+      boldItalic: await pdfDoc.embedFont(StandardFonts.HelveticaBoldOblique),
+      mono: await pdfDoc.embedFont(StandardFonts.Courier),
+    };
+  }
+
+  let page = pdfDoc.addPage([595.28, 841.89]);
+  const { width, height } = page.getSize();
+  
+  const margin = 25;
+  let y = height - margin;
+  const contentWidth = width - (margin * 2);
+
+  const styles = {
+    h1: { size: 24, font: fonts.bold, spacing: 32, color: rgb(0.10, 0.25, 0.45) },
+    h2: { size: 18, font: fonts.bold, spacing: 28, color: rgb(0.10, 0.25, 0.45) },
+    h3: { size: 14, font: fonts.bold, spacing: 24, color: rgb(0.10, 0.25, 0.45) },
+    p: { size: 11, font: fonts.regular, spacing: 18, color: rgb(0.06, 0.09, 0.16), lineHeight: 1.5 },
+    code: { 
+      size: 9.5, 
+      font: fonts.mono, 
+      spacing: 13, 
+      color: rgb(0.97, 0.98, 0.99), 
+      bg: rgb(0.06, 0.09, 0.16),
+      border: rgb(0.2, 0.22, 0.28)
+    },
+    blockquote: {
+      bg: rgb(0.945, 0.96, 0.976),
+      border: rgb(0.10, 0.25, 0.45),
+      color: rgb(0.3, 0.35, 0.4)
+    },
+    link: {
+      color: rgb(0.13, 0.35, 0.54)
+    },
+    hr: {
+      color: rgb(0.88, 0.91, 0.94)
+    }
   };
 
-  function addPageNumber() {
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
-    doc.setTextColor(...colors.muted);
-    doc.text(`${pageNumber}`, pageWidth / 2, pageHeight - 30, { align: "center" });
-    pageNumber++;
-  }
-
-  function checkPage(needed: number) {
-    if (y + needed > pageHeight - 50) {
-      addPageNumber();
-      doc.addPage();
-      y = margin + 10;
+  const checkPageEdge = (needed: number) => {
+    if (y - needed < margin) {
+      page = pdfDoc.addPage([595.28, 841.89]);
+      y = height - margin;
     }
+  };
+
+  async function embedImage(url: string) {
+    return new Promise<any>((resolve, reject) => {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = async () => {
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = img.width;
+          canvas.height = img.height;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) throw new Error("Could not get canvas context");
+          ctx.drawImage(img, 0, 0);
+          const dataUrl = canvas.toDataURL('image/png');
+          const response = await fetch(dataUrl);
+          const arrayBuffer = await response.arrayBuffer();
+          const pngImage = await pdfDoc.embedPng(new Uint8Array(arrayBuffer));
+          resolve(pngImage);
+        } catch (e) {
+          reject(e);
+        }
+      };
+      img.onerror = () => reject(new Error(`Failed to load image from ${url}`));
+      img.src = url;
+    });
   }
 
-  function setFont(bold = false, italic = false) {
-    if (useCustomFont) {
-      doc.setFont("Roboto", bold ? "bold" : "normal");
-    } else {
-      doc.setFont("helvetica", bold ? "bold" : italic ? "italic" : "normal");
-    }
+  function getFontForState(bold: boolean, italic: boolean) {
+    if (bold && italic) return fonts.boldItalic;
+    if (bold) return fonts.bold;
+    if (italic) return fonts.italic;
+    return fonts.regular;
   }
 
-  function renderSegments(segments: TextSegment[], x: number, maxWidth: number) {
+  async function renderInlineTokens(tokens: any[], x: number, maxWidth: number, baseStyle: any) {
     let currentX = x;
-    const startY = y;
-    setFont();
-    doc.setFontSize(11);
+    let bold = false;
+    let italic = false;
 
-    for (const segment of segments) {
-      if (segment.code) {
-        doc.setFont("courier", "normal");
-        doc.setFontSize(10);
-        const textWidth = doc.getTextWidth(segment.text);
-        
-        // Check if we need to wrap to next line
-        if (currentX + textWidth + 8 > x + maxWidth && currentX > x) {
-          y += 16;
-          currentX = x;
-        }
-        
-        doc.setFillColor(...colors.background);
-        doc.rect(currentX - 2, y - 10, textWidth + 4, 14, "F");
-        doc.setTextColor(...colors.accent);
-        doc.text(segment.text, currentX, y);
-        doc.setTextColor(...colors.primary);
-        currentX += textWidth + 4;
-        setFont();
-        doc.setFontSize(11);
-      } else {
-        setFont(segment.bold, segment.italic);
-        if (segment.link) doc.setTextColor(...colors.accent);
-        
-        // Split text into words for proper wrapping
-        const words = segment.text.split(' ');
-        
-        for (let i = 0; i < words.length; i++) {
-          const word = words[i] + (i < words.length - 1 ? ' ' : '');
-          const wordWidth = doc.getTextWidth(word);
+    const processTokens = async (inlineTokens: any[]) => {
+      for (const token of inlineTokens) {
+        if (token.type === 'strong') {
+          bold = true;
+          await processTokens(token.tokens || []);
+          bold = false;
+        } else if (token.type === 'em') {
+          italic = true;
+          await processTokens(token.tokens || []);
+          italic = false;
+        } else if (token.type === 'del') {
+          const font = getFontForState(bold, italic);
+          const text = token.text;
+          const textWidth = font.widthOfTextAtSize(text, baseStyle.size);
           
-          // Check if word fits on current line
-          if (currentX + wordWidth > x + maxWidth && currentX > x) {
-            y += 16;
+          if (currentX + textWidth > x + maxWidth) {
+            y -= baseStyle.size * baseStyle.lineHeight;
             currentX = x;
+            checkPageEdge(baseStyle.size * baseStyle.lineHeight);
           }
-          
-          doc.text(word, currentX, y);
-          
-          if (segment.strikethrough) {
-            doc.setDrawColor(...colors.muted);
-            doc.line(currentX, y - 4, currentX + wordWidth, y - 4);
+
+          page.drawText(text, {
+            x: currentX,
+            y: y - baseStyle.size,
+            size: baseStyle.size,
+            font: font,
+            color: baseStyle.color,
+          });
+
+          page.drawLine({
+            start: { x: currentX, y: y - baseStyle.size + (baseStyle.size / 3) },
+            end: { x: currentX + textWidth, y: y - baseStyle.size + (baseStyle.size / 3) },
+            thickness: 0.5,
+            color: baseStyle.color,
+          });
+          currentX += textWidth;
+        } else if (token.type === 'image') {
+          try {
+            const image = await embedImage(token.href);
+            const { width: imgW, height: imgH } = image.scale(1);
+            const scale = Math.min(maxWidth / imgW, 1.0);
+            const finalW = imgW * scale;
+            const finalH = imgH * scale;
+
+            checkPageEdge(finalH + 20);
+            page.drawImage(image, {
+              x: x + (maxWidth - finalW) / 2,
+              y: y - finalH - 5,
+              width: finalW,
+              height: finalH,
+            });
+            y -= finalH + 15;
+            currentX = x; // Reset X after image
+          } catch (e) {
+            console.error("Failed to load image:", e);
           }
+        } else if (token.type === 'codespan') {
+          const font = fonts.mono;
+          const text = token.text;
+          const textWidth = font.widthOfTextAtSize(text, baseStyle.size * 0.9);
           
-          if (segment.link) {
-            doc.setDrawColor(...colors.accent);
-            doc.line(currentX, y + 1, currentX + wordWidth, y + 1);
+          if (currentX + textWidth > x + maxWidth) {
+            y -= baseStyle.size * baseStyle.lineHeight;
+            currentX = x;
+            checkPageEdge(baseStyle.size * baseStyle.lineHeight);
           }
-          
-          currentX += wordWidth;
-        }
-        
-        if (segment.link) {
-          doc.setTextColor(...colors.primary);
+
+          page.drawRectangle({
+            x: currentX - 1,
+            y: y - baseStyle.size - 1,
+            width: textWidth + 2,
+            height: baseStyle.size + 2,
+            color: rgb(0.945, 0.96, 0.976),
+          });
+
+          page.drawText(text, {
+            x: currentX,
+            y: y - baseStyle.size,
+            size: baseStyle.size * 0.9,
+            font: font,
+            color: rgb(0.8, 0.2, 0.4), // Professional Rose/Crimson
+          });
+          currentX += textWidth + 2;
+        } else if (token.type === 'link') {
+          const linkColor = styles.link.color;
+          const textTokens = token.tokens;
+          const originalColor = baseStyle.color;
+          baseStyle.color = linkColor;
+          await processTokens(textTokens || []);
+          baseStyle.color = originalColor;
+        } else if (token.type === 'text' || token.type === 'escape') {
+          if (token.tokens && token.tokens.length > 0) {
+            await processTokens(token.tokens);
+          } else {
+            const font = getFontForState(bold, italic);
+            const words = token.text.split(/(\s+)/);
+            
+            for (const word of words) {
+              const wordWidth = font.widthOfTextAtSize(word, baseStyle.size);
+              
+              if (currentX + wordWidth > x + maxWidth && word.trim().length > 0) {
+                y -= baseStyle.size * baseStyle.lineHeight;
+                currentX = x;
+                checkPageEdge(baseStyle.size * baseStyle.lineHeight);
+              }
+              
+              page.drawText(word, {
+                x: currentX,
+                y: y - baseStyle.size,
+                size: baseStyle.size,
+                font: font,
+                color: baseStyle.color,
+              });
+              currentX += wordWidth;
+            }
+          }
+        } else if (token.type === 'br') {
+          y -= baseStyle.size * baseStyle.lineHeight;
+          currentX = x;
+          checkPageEdge(baseStyle.size * baseStyle.lineHeight);
+        } else if (token.tokens) {
+          await processTokens(token.tokens);
         }
       }
+    };
+
+    await processTokens(tokens);
+    y -= baseStyle.size * baseStyle.lineHeight;
+  }
+
+  async function renderList(items: any[], level = 0, ordered = false) {
+    let index = 1;
+    for (const item of items) {
+      const indent = level * 20;
+      const bullet = ordered ? `${index}. ` : '• ';
+      const bulletWidth = fonts.regular.widthOfTextAtSize(bullet, styles.p.size);
+      
+      checkPageEdge(styles.p.size * styles.p.lineHeight);
+      page.drawText(bullet, {
+        x: margin + indent,
+        y: y - styles.p.size,
+        size: styles.p.size,
+        font: fonts.regular,
+        color: styles.p.color,
+      });
+
+      let xOffset = indent + bulletWidth + 5;
+
+      if (item.task) {
+        const checkboxSize = 8;
+        const checkboxY = y - styles.p.size + 1;
+        
+        page.drawRectangle({
+          x: margin + xOffset,
+          y: checkboxY,
+          width: checkboxSize,
+          height: checkboxSize,
+          borderWidth: 0.5,
+          borderColor: styles.p.color,
+        });
+
+        if (item.checked) {
+          page.drawLine({
+            start: { x: margin + xOffset + 2, y: checkboxY + 4 },
+            end: { x: margin + xOffset + 3, y: checkboxY + 2 },
+            thickness: 1,
+            color: styles.p.color,
+          });
+          page.drawLine({
+            start: { x: margin + xOffset + 3, y: checkboxY + 2 },
+            end: { x: margin + xOffset + 6, y: checkboxY + 6 },
+            thickness: 1,
+            color: styles.p.color,
+          });
+        }
+        xOffset += checkboxSize + 8;
+      }
+
+      await renderInlineTokens(item.tokens || [], margin + xOffset, contentWidth - xOffset, styles.p);
+      
+      if (item.tokens) {
+        const subList = item.tokens.find((t: any) => t.type === 'list');
+        if (subList) {
+          await renderList(subList.items, level + 1, subList.ordered);
+        }
+      }
+      
+      index++;
     }
   }
 
-  const tokens = parseMarkdown(markdown);
+  const tokens = marked.lexer(markdown);
 
   for (const token of tokens) {
     switch (token.type) {
-      case "heading": {
-        const sizes = { 1: 28, 2: 22, 3: 18, 4: 15, 5: 13, 6: 12 };
-        const size = sizes[token.depth as keyof typeof sizes] ?? 12;
-        const spacing = { 1: 20, 2: 16, 3: 12, 4: 10, 5: 8, 6: 6 };
-        
-        checkPage(size + 30);
-        y += spacing[token.depth as keyof typeof spacing] ?? 8;
-        
-        setFont(true);
-        doc.setFontSize(size);
-        doc.setTextColor(...colors.primary);
-        
-        const lines = doc.splitTextToSize(token.text, contentWidth);
-        for (let i = 0; i < lines.length; i++) {
-          doc.text(lines[i], margin, y);
-          if (i < lines.length - 1) {
-            y += size + 2;
-          }
-        }
-        
-        if (token.depth <= 2) {
-          y += 6; // Small gap between text and line
-          doc.setDrawColor(...colors.border);
-          doc.setLineWidth(token.depth === 1 ? 2 : 1);
-          doc.line(margin, y, pageWidth - margin, y);
-          y += token.depth === 1 ? 12 : 10; // More space after H1 underline
-        } else {
-          y += 6; // Space after H3-H6
-        }
-        
-        y += token.depth === 1 ? 4 : token.depth === 2 ? 8 : 10; // H1: 4pt, H2: 8pt, H3+: 10pt
-        break;
-      }
-
-      case "paragraph": {
-        setFont();
-        doc.setFontSize(11);
-        doc.setTextColor(...colors.primary);
-        
-        // Calculate approximate height needed
-        const textLength = token.text.length;
-        const approxLines = Math.ceil(textLength / 80);
-        checkPage(approxLines * 16 + 10);
-        
-        renderSegments(token.segments, margin, contentWidth);
-        y += 18;
-        break;
-      }
-
-      case "list_item": {
-        const indent = margin + token.level * 20;
-        setFont();
-        doc.setFontSize(11);
-        doc.setTextColor(...colors.primary);
-        checkPage(20);
-
-        if (token.checked !== undefined) {
-          // Task list checkbox
-          doc.setDrawColor(...colors.border);
-          doc.setLineWidth(1);
-          doc.rect(indent, y - 9, 10, 10);
-          if (token.checked) {
-            // Draw checkmark using lines instead of unicode
-            doc.setDrawColor(...colors.accent);
-            doc.setLineWidth(2);
-            doc.line(indent + 2, y - 3, indent + 4, y - 1);
-            doc.line(indent + 4, y - 1, indent + 8, y - 7);
-            doc.setTextColor(...colors.primary);
-          }
-          renderSegments(token.segments, indent + 16, contentWidth - token.level * 20 - 16);
-        } else {
-          const bullet = token.ordered ? "•" : "•";
-          doc.text(bullet, indent, y);
-          renderSegments(token.segments, indent + 12, contentWidth - token.level * 20 - 12);
-        }
-        
-        y += 18;
-        break;
-      }
-
-      case "blockquote": {
-        setFont(false, true);
-        doc.setFontSize(11);
-        doc.setTextColor(...colors.secondary);
-        
-        // Calculate height needed
-        const tempY = y;
-        y += 4;
-        renderSegments(token.segments, margin + 16, contentWidth - 32);
-        const quoteHeight = y - tempY + 12;
-        y = tempY;
-        
-        checkPage(quoteHeight);
-        
-        // Background and border
-        doc.setFillColor(...colors.background);
-        doc.rect(margin, y - 8, contentWidth, quoteHeight, "F");
-        doc.setDrawColor(...colors.accent);
-        doc.setLineWidth(4);
-        doc.line(margin, y - 8, margin, y - 8 + quoteHeight);
-        
-        y += 4;
-        renderSegments(token.segments, margin + 16, contentWidth - 32);
-        y += 12;
-        doc.setTextColor(...colors.primary);
-        break;
-      }
-
-      case "code": {
-        doc.setFont("courier", "normal");
-        doc.setFontSize(9);
-        
-        const lines = token.text.split("\n");
-        const blockHeight = lines.length * 13 + (token.language ? 34 : 20);
-        checkPage(blockHeight);
-        
-        // Dark background with rounded corners
-        doc.setFillColor(...colors.codeBackground);
-        doc.roundedRect(margin, y - 10, contentWidth, blockHeight, 4, 4, "F");
-        
-        // Language label
-        if (token.language) {
-          doc.setFontSize(8);
-          doc.setTextColor(...colors.muted);
-          doc.text(token.language.toUpperCase(), margin + 10, y + 2);
-          y += 18;
-        } else {
-          y += 4;
-        }
-        
-        // Code content
-        doc.setFontSize(9);
-        doc.setTextColor(...colors.codeText);
-        for (const line of lines) {
-          doc.text(line || " ", margin + 10, y);
-          y += 13;
-        }
-        
-        y += 12;
-        doc.setTextColor(...colors.primary);
-        break;
-      }
-
-      case "table": {
-        const colWidth = contentWidth / token.headers.length;
-        const rowHeight = 28;
-        const tableHeight = (token.rows.length + 1) * rowHeight;
-        
-        checkPage(tableHeight + 10);
-        
-        // Header row
-        doc.setFillColor(...colors.primary);
-        doc.rect(margin, y, contentWidth, rowHeight, "F");
-        setFont(true);
-        doc.setFontSize(10);
-        doc.setTextColor(255, 255, 255);
-        
-        token.headers.forEach((header, i) => {
-          const cellText = doc.splitTextToSize(header, colWidth - 20);
-          doc.text(cellText[0] || "", margin + i * colWidth + 10, y + 18);
+      case 'heading': {
+        const hStyle = token.depth === 1 ? styles.h1 : token.depth === 2 ? styles.h2 : styles.h3;
+        checkPageEdge(hStyle.size + hStyle.spacing);
+        page.drawText(token.text, {
+          x: margin,
+          y: y - hStyle.size,
+          size: hStyle.size,
+          font: hStyle.font,
+          color: hStyle.color,
         });
-        
-        y += rowHeight;
-        
-        // Data rows
-        setFont();
-        doc.setFontSize(10);
-        doc.setTextColor(...colors.primary);
-        
-        token.rows.forEach((row, rowIndex) => {
-          // Alternating row colors
-          if (rowIndex % 2 === 0) {
-            doc.setFillColor(...colors.background);
-            doc.rect(margin, y, contentWidth, rowHeight, "F");
-          }
-          
-          // Cell borders
-          doc.setDrawColor(...colors.border);
-          doc.setLineWidth(0.5);
-          for (let i = 0; i <= token.headers.length; i++) {
-            doc.line(margin + i * colWidth, y, margin + i * colWidth, y + rowHeight);
-          }
-          
-          // Cell content with proper wrapping
-          row.forEach((cell, i) => {
-            const cellText = doc.splitTextToSize(cell, colWidth - 20);
-            doc.text(cellText[0] || "", margin + i * colWidth + 10, y + 18);
+        y -= hStyle.spacing;
+        break;
+      }
+      
+      case 'paragraph': {
+        checkPageEdge(styles.p.size * styles.p.lineHeight);
+        await renderInlineTokens(token.tokens || [], margin, contentWidth, styles.p);
+        y -= 6;
+        break;
+      }
+
+      case 'list': {
+        await renderList(token.items, 0, token.ordered);
+        y -= 10;
+        break;
+      }
+      
+      case 'image': {
+        try {
+          const image = await embedImage(token.href);
+          const { width: imgW, height: imgH } = image.scale(1);
+          const scale = Math.min(contentWidth / imgW, 1.0);
+          const finalW = imgW * scale;
+          const finalH = imgH * scale;
+
+          checkPageEdge(finalH + 20);
+          page.drawImage(image, {
+            x: margin + (contentWidth - finalW) / 2,
+            y: y - finalH - 5,
+            width: finalW,
+            height: finalH,
           });
-          
-          y += rowHeight;
-        });
-        
-        // Bottom border
-        doc.setDrawColor(...colors.border);
-        doc.line(margin, y, pageWidth - margin, y);
-        
-        y += 16;
+          y -= finalH + 15;
+        } catch (e) {
+          console.error("Failed to load image:", e);
+        }
         break;
       }
 
-      case "hr": {
-        checkPage(24);
-        y += 4;
-        doc.setDrawColor(...colors.border);
-        doc.setLineWidth(1);
-        const hrWidth = contentWidth * 0.6;
-        const hrStart = margin + (contentWidth - hrWidth) / 2;
-        doc.line(hrStart, y, hrStart + hrWidth, y);
-        y += 20;
+      case 'hr': {
+        checkPageEdge(20);
+        page.drawLine({
+          start: { x: margin, y: y - 10 },
+          end: { x: width - margin, y: y - 10 },
+          thickness: 1,
+          color: styles.hr.color,
+        });
+        y -= 30;
+        break;
+      }
+      
+      case 'code': {
+        const codeLines = token.text.split('\n');
+        const finalLines: string[] = [];
+        for (const line of codeLines) {
+          const words = line.split(/(\s+)/);
+          let currentLine = '';
+          for (const word of words) {
+            const testLine = currentLine + word;
+            if (fonts.mono.widthOfTextAtSize(testLine, styles.code.size) > contentWidth - 20) {
+              finalLines.push(currentLine);
+              currentLine = word;
+            } else {
+              currentLine = testLine;
+            }
+          }
+          finalLines.push(currentLine);
+        }
+
+        const codeHeight = finalLines.length * styles.code.spacing + 24;
+        checkPageEdge(codeHeight);
+        
+        page.drawRectangle({
+          x: margin - 10,
+          y: y - codeHeight,
+          width: contentWidth + 20,
+          height: codeHeight,
+          color: styles.code.bg,
+        });
+        
+        y -= 12;
+        for (const line of finalLines) {
+          page.drawText(line, {
+            x: margin,
+            y: y - styles.code.size,
+            size: styles.code.size,
+            font: fonts.mono,
+            color: styles.code.color,
+          });
+          y -= styles.code.spacing;
+        }
+        y -= 12;
+        break;
+      }
+
+      case 'table': {
+        const colCount = token.header.length;
+        const colWidth = contentWidth / colCount;
+        const rowHeight = 25;
+        
+        const tableHeight = (token.rows.length + 1) * rowHeight;
+        checkPageEdge(tableHeight + 20);
+
+        const headerBg = rgb(0.945, 0.96, 0.976);
+        const stripeBg = rgb(0.97, 0.98, 0.99);
+        const borderColor = rgb(0.88, 0.91, 0.94);
+
+        page.drawRectangle({
+          x: margin,
+          y: y - tableHeight,
+          width: contentWidth,
+          height: tableHeight,
+          borderWidth: 0.5,
+          borderColor: borderColor,
+        });
+
+        page.drawRectangle({
+          x: margin,
+          y: y - rowHeight,
+          width: contentWidth,
+          height: rowHeight,
+          color: headerBg,
+        });
+
+        token.header.forEach((cell: any, i: number) => {
+          page.drawText(cell.text || String(cell), {
+            x: margin + i * colWidth + 5,
+            y: y - rowHeight + 7,
+            size: 10,
+            font: fonts.bold,
+            color: rgb(0.10, 0.25, 0.45),
+          });
+
+          if (i > 0) {
+            page.drawLine({
+              start: { x: margin + i * colWidth, y: y },
+              end: { x: margin + i * colWidth, y: y - tableHeight },
+              thickness: 0.5,
+              color: borderColor,
+            });
+          }
+        });
+
+        y -= rowHeight;
+
+        token.rows.forEach((row: any[], rowIndex: number) => {
+          if (rowIndex % 2 === 0) {
+            page.drawRectangle({
+              x: margin + 0.5,
+              y: y - rowHeight + 0.5,
+              width: contentWidth - 1,
+              height: rowHeight - 1,
+              color: stripeBg,
+            });
+          }
+
+          page.drawLine({
+            start: { x: margin, y: y },
+            end: { x: margin + contentWidth, y: y },
+            thickness: 0.5,
+            color: borderColor,
+          });
+
+          row.forEach((cell: any, i: number) => {
+            page.drawText(cell.text || String(cell), {
+              x: margin + i * colWidth + 5,
+              y: y - rowHeight + 7,
+              size: 10,
+              font: fonts.regular,
+              color: styles.p.color,
+            });
+          });
+          y -= rowHeight;
+        });
+
+        y -= 20;
+        break;
+      }
+
+      case 'blockquote': {
+        const xOffset = 25;
+        const startY = y;
+        const quoteColor = styles.blockquote.color;
+        const originalColor = styles.p.color;
+        styles.p.color = quoteColor;
+        
+        await renderInlineTokens(token.tokens || [], margin + xOffset, contentWidth - xOffset, styles.p);
+        const endY = y;
+        
+        page.drawLine({
+          start: { x: margin + 8, y: startY },
+          end: { x: margin + 8, y: endY + styles.p.size },
+          thickness: 3,
+          color: styles.blockquote.border,
+        });
+        
+        styles.p.color = originalColor;
+        y -= 10;
         break;
       }
     }
   }
 
-  // Add page number to last page
-  addPageNumber();
-
-  doc.save(filename);
+  const pdfBytes = await pdfDoc.save();
+  const blob = new Blob([pdfBytes as any], { type: 'application/pdf' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
 }
