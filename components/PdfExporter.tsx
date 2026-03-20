@@ -280,14 +280,30 @@ export async function exportToPdf(markdown: string, filename = "document.pdf") {
         y -= rowH;
         for (let ri = 0; ri < t.rows.length; ri++) {
           const row = t.rows[ri];
-          if (ri % 2 === 1) page.drawRectangle({ x: margin, y: y - rowH, width: contentWidth, height: rowH, color: colors.stripe });
+          const rowTopY = y;
+          let maxRowHeight = rowH;
+
+          // Track minY to determine how much space the row actually took
+          const getMinY = () => y; 
+          
+          if (ri % 2 === 1) {
+            // Pre-calculate if possible or just use rowH. For safety we draw a rowH stripe.
+            page.drawRectangle({ x: margin, y: rowTopY - rowH, width: contentWidth, height: rowH, color: colors.stripe });
+          }
+          
           for (let ci = 0; ci < row.length; ci++) {
             const cell = row[ci];
-            const oldY = y; y -= 9;
-            await drawTextSafe(cell.text || String(cell), margin + ci * colW + 10, 10, fonts.regular, colors.text, colW - 20, margin + ci * colW + 10, 1.0);
-            y = oldY;
+            y = rowTopY - 9; // Reset Y to row top (minus padding) for each cell
+            if (cell.tokens) {
+              await renderInlineTokens(cell.tokens, margin + ci * colW + 10, colW - 20, { ...styles.p, size: 10 });
+            } else {
+              await drawTextSafe(cell.text || String(cell), margin + ci * colW + 10, 10, fonts.regular, colors.text, colW - 20, margin + ci * colW + 10, 1.0);
+            }
+            const cellBottomY = y - 10; // 10 is font size
+            const reachedH = rowTopY - cellBottomY + 5;
+            if (reachedH > maxRowHeight) maxRowHeight = reachedH;
           }
-          y -= rowH;
+          y = rowTopY - maxRowHeight;
         }
         y -= 20;
         break;
