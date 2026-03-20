@@ -107,7 +107,7 @@ const MarkdownText = ({ tokens }: { tokens: any[] }) => {
         if (t.type === 'link') return <Link key={i} src={t.href} style={styles.link}><MarkdownText tokens={t.tokens || []} /></Link>;
         if (t.type === 'codespan') return <Text key={i} style={styles.codespan}>{t.text}</Text>;
         if (t.type === 'del') return <Text key={i} style={{ textDecoration: 'line-through' }}><MarkdownText tokens={t.tokens || []} /></Text>;
-        if (t.type === 'image') return <Image key={i} src={t.href} style={{ width: 40, height: 40 }} />;
+        if (t.type === 'image') return <Image key={i} src={t.href} style={{ width: 14, height: 14 }} />;
         if (t.type === 'text' || t.type === 'escape') {
           if (t.tokens && t.tokens.length > 0) return <MarkdownText key={i} tokens={t.tokens} />;
           const regex = emojiRegex();
@@ -190,7 +190,7 @@ const MarkdownDoc = ({ tokens }: { tokens: any[] }) => (
             </View>
           );
           case 'hr': return <View key={i} style={styles.hr} />;
-          case 'image': return <Image key={i} src={t.href} style={{ width: '100%', marginBottom: 15 }} />;
+          case 'image': return <Image key={i} src={t.href} style={{ maxWidth: '100%', alignSelf: 'center', marginBottom: 12 }} />;
           default: return null;
         }
       })}
