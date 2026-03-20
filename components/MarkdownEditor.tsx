@@ -78,16 +78,15 @@ export default function MarkdownEditor() {
         .pdf-preview hr { border: 0; border-top: 1px solid #e2e8f0; margin: 2rem 0; }
       `}</style>
 
-      <div className="max-w-5xl mx-auto">
-        <header className="mb-8 flex flex-col md:flex-row md:items-end justify-between gap-4">
+      <div className="max-w-[98%] mx-auto">
+        <header className="mb-6 flex flex-col md:flex-row md:items-end justify-between gap-4">
           <div>
             <h1 className="text-4xl font-black tracking-tight text-[#0f172a]">
               MD<span className="text-blue-600">.</span>PDF
             </h1>
-            {/* <p className="text-slate-500 mt-1 font-medium italic">Premium Document Exporter</p> */}
           </div>
 
-          <div className="flex gap-2 bg-white p-1 rounded-xl shadow-sm border border-slate-200">
+          <div className="flex lg:hidden gap-2 bg-white p-1 rounded-xl shadow-sm border border-slate-200">
             <button
               onClick={() => setView("edit")}
               className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${view === "edit" ? "bg-slate-900 text-white shadow-md" : "text-slate-500 hover:text-slate-900"
@@ -105,22 +104,14 @@ export default function MarkdownEditor() {
           </div>
         </header>
 
-        <div className="grid grid-cols-1 gap-6">
-          <div className="relative group">
-            {view === "edit" ? (
-              <textarea
-                className="w-full h-[600px] p-6 font-mono text-sm leading-relaxed text-slate-800 border-2 border-slate-200 rounded-2xl bg-white shadow-sm focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all outline-none resize-none"
-                value={markdown}
-                onChange={(e) => setMarkdown(e.target.value)}
-                placeholder="Start typing your content..."
-              />
-            ) : (
-              <div
-                className="w-full h-[600px] p-8 overflow-y-auto border-2 border-slate-200 rounded-2xl bg-white shadow-sm pdf-preview"
-                dangerouslySetInnerHTML={{ __html: previewHtml }}
-              />
-            )}
-
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <div className={`relative group ${view === "preview" ? "hidden lg:block" : "block"}`}>
+            <textarea
+              className="w-full h-[calc(100vh-250px)] min-h-[500px] p-6 font-mono text-sm leading-relaxed text-slate-800 border-2 border-slate-200 rounded-2xl bg-white shadow-sm focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all outline-none resize-none"
+              value={markdown}
+              onChange={(e) => setMarkdown(e.target.value)}
+              placeholder="Start typing your content..."
+            />
             <button
               onClick={handleClear}
               className="absolute top-4 right-4 p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
@@ -131,6 +122,13 @@ export default function MarkdownEditor() {
               </svg>
             </button>
           </div>
+
+          <div className={`w-full h-[calc(100vh-250px)] min-h-[500px] p-8 overflow-y-auto border-2 border-slate-200 rounded-2xl bg-white shadow-sm pdf-preview ${view === "edit" ? "hidden lg:block" : "block"}`}
+            dangerouslySetInnerHTML={{ __html: previewHtml }}
+          />
+        </div>
+
+        <div className="mt-6">
 
           <footer className="flex flex-col md:flex-row items-center justify-center gap-4 bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
             <div className="flex items-center gap-2 group">
