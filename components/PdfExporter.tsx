@@ -9,7 +9,7 @@ export async function exportToPdf(markdown: string, filename = "document.pdf") {
   const pdfDoc = await PDFDocument.create();
   pdfDoc.registerFontkit(fontkit as any);
 
-  // START WITH STANDARD FONTS (Ensures zero-delay and offline stability)
+  // 1. FONT INITIALIZATION
   let fonts = {
     regular: await pdfDoc.embedFont(StandardFonts.Helvetica),
     bold: await pdfDoc.embedFont(StandardFonts.HelveticaBold),
@@ -17,26 +17,25 @@ export async function exportToPdf(markdown: string, filename = "document.pdf") {
     mono: await pdfDoc.embedFont(StandardFonts.Courier),
   };
 
-  // ATTEMPT TO UPGRADE TO INTER (Non-blocking, silent failure)
   try {
-    const fontUrls = {
-      regular: 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/inter/static/Inter-Regular.ttf',
+    const urls = {
+      reg: 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/inter/static/Inter-Regular.ttf',
       bold: 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/inter/static/Inter-Bold.ttf',
     };
-    const [regB, boldB] = await Promise.all([
-      fetch(fontUrls.regular).then(r => r.ok ? r.arrayBuffer() : null).catch(() => null),
-      fetch(fontUrls.bold).then(r => r.ok ? r.arrayBuffer() : null).catch(() => null),
+    const [rb, bb] = await Promise.all([
+      fetch(urls.reg).then(r => r.ok ? r.arrayBuffer() : null).catch(() => null),
+      fetch(urls.bold).then(r => r.ok ? r.arrayBuffer() : null).catch(() => null),
     ]);
-    if (regB) fonts.regular = await pdfDoc.embedFont(regB);
-    if (boldB) fonts.bold = await pdfDoc.embedFont(boldB);
+    if (rb) fonts.regular = await pdfDoc.embedFont(rb);
+    if (bb) fonts.bold = await pdfDoc.embedFont(bb);
   } catch (e) {
     console.warn("Silent Upgrade failed: using standard fonts.");
   }
 
+  // 2. PAGE & STYLE SETUP
   const pageSize: [number, number] = [595.28, 841.89];
   let page = pdfDoc.addPage(pageSize);
   const { width, height } = page.getSize();
-  
   const margin = 50;
   let y = height - margin;
   const contentWidth = width - (margin * 2);
@@ -51,30 +50,30 @@ export async function exportToPdf(markdown: string, filename = "document.pdf") {
   };
 
   const styles = {
-    h1: { size: 26, font: fonts.bold, spacing: 40, color: colors.primary, lineHeight: 1.2 },
-    h2: { size: 20, font: fonts.bold, spacing: 32, color: colors.primary, lineHeight: 1.2 },
-    h3: { size: 15, font: fonts.bold, spacing: 26, color: colors.primary, lineHeight: 1.2 },
-    p: { size: 11, font: fonts.regular, spacing: 18, color: colors.text, lineHeight: 1.5 },
+    h1: { size: 22, font: fonts.bold, spacing: 40, color: colors.primary, lineHeight: 1.2 },
+    h2: { size: 16, font: fonts.bold, spacing: 32, color: colors.primary, lineHeight: 1.2 },
+    h3: { size: 13, font: fonts.bold, spacing: 26, color: colors.primary, lineHeight: 1.2 },
+    p: { size: 12, font: fonts.regular, spacing: 22, color: colors.text, lineHeight: 1.55 },
     mono: { size: 9, font: fonts.mono, spacing: 13, color: rgb(0.9, 0.92, 0.95), bg: rgb(0.08, 0.1, 0.16) }
   };
 
+  // 3. CORE HELPERS
   const checkPageEdge = (needed: number) => {
     if (y - needed < margin + 40) {
       addFooter();
       page = pdfDoc.addPage(pageSize);
       y = height - margin;
+      return true;
     }
+    return false;
   };
 
   const addFooter = () => {
     const pageNum = pdfDoc.getPageCount();
-    const footerText = `Page ${pageNum}`;
-    const fontSize = 9;
-    const textWidth = fonts.regular.widthOfTextAtSize(footerText, fontSize);
-    page.drawText(footerText, {
-      x: width / 2 - textWidth / 2, y: margin / 2,
-      size: fontSize, font: fonts.regular, color: colors.subtle,
-    });
+    const txt = `Page ${pageNum}`;
+    const sz = 9;
+    const w = fonts.regular.widthOfTextAtSize(txt, sz);
+    page.drawText(txt, { x: width / 2 - w / 2, y: margin / 2, size: sz, font: fonts.regular, color: colors.subtle });
   };
 
   const emojiCache = new Map<string, any>();
@@ -103,7 +102,7 @@ export async function exportToPdf(markdown: string, filename = "document.pdf") {
   }
 
   const safeWidth = (font: PDFFont, text: string, size: number) => {
-    try { return font.widthOfTextAtSize(text, size); } 
+    try { return font.widthOfTextAtSize(text, size); }
     catch (e) { return text.length * (size * 0.6); }
   };
 
@@ -130,40 +129,52 @@ export async function exportToPdf(markdown: string, filename = "document.pdf") {
           }
           try {
             page.drawText(word, { x: currentX, y: y - size, size, font, color });
-          } catch(e) {
+          } catch (e) {
             const img = await getEmojiImage(word);
-            if(img) page.drawImage(img, { x: currentX, y: y - size - (size*0.1), width: size*1.1, height: size*1.1 });
+            if (img) {
+              const eS = size * 0.85;
+              const emojiY = (y - size) + (size * 0.35) - (eS / 2);
+              page.drawImage(img, { x: currentX, y: emojiY, width: eS, height: eS });
+            }
           }
           currentX += wordWidth;
         }
       } else {
         const img = await getEmojiImage(seg.content);
         if (img) {
-          const imgSize = size * 1.1;
+          const imgSize = size * 0.85;
           if (currentX + imgSize > startX + maxWidth) {
             y -= size * lineHeight; currentX = startX; checkPageEdge(size * lineHeight);
           }
-          page.drawImage(img, { x: currentX, y: y - size - (size * 0.1), width: imgSize, height: imgSize });
-          currentX += imgSize + 1;
+          const emojiY = (y - size) + (size * 0.35) - (imgSize / 2);
+          page.drawImage(img, { x: currentX, y: emojiY, width: imgSize, height: imgSize });
+          currentX += imgSize + 2;
         }
       }
     }
     return currentX;
   }
 
-  async function drawImageSafe(url: string, maxWidth: number) {
+  async function drawImageSafe(url: string, maxWidth: number, startX: number) {
     try {
-      const resp = await fetch(url);
+      const resp = await fetch(url, { mode: 'cors' });
+      const contentType = resp.headers.get("content-type");
       const bytes = new Uint8Array(await resp.arrayBuffer());
-      let img = url.toLowerCase().endsWith('.png') ? await pdfDoc.embedPng(bytes) : await pdfDoc.embedJpg(bytes);
+      let img;
+      const lowerUrl = url.toLowerCase();
+      if (contentType?.includes("jpeg") || lowerUrl.endsWith(".jpg") || lowerUrl.endsWith(".jpeg")) img = await pdfDoc.embedJpg(bytes);
+      else if (contentType?.includes("png") || lowerUrl.endsWith(".png")) img = await pdfDoc.embedPng(bytes);
+      else { try { img = await pdfDoc.embedJpg(bytes); } catch { img = await pdfDoc.embedPng(bytes); } }
+
       const dims = img.scale(1);
       const scale = Math.min(maxWidth / dims.width, 1.0);
       const finalW = dims.width * scale; const finalH = dims.height * scale;
       checkPageEdge(finalH + 20);
-      page.drawImage(img, { x: margin + (maxWidth - finalW) / 2, y: y - finalH - 5, width: finalW, height: finalH });
+      page.drawImage(img, { x: startX + (maxWidth - finalW) / 2, y: y - finalH - 5, width: finalW, height: finalH });
       y -= finalH + 15;
     } catch (e) {
-      console.error("Image Draw Error:", e);
+      await drawTextSafe(`[Image Load Failed: ${url.slice(0, 30)}...]`, startX, 9, fonts.regular, rgb(1, 0, 0), maxWidth, startX, 1.0);
+      y -= 15;
     }
   }
 
@@ -178,18 +189,18 @@ export async function exportToPdf(markdown: string, filename = "document.pdf") {
         else if (t.type === 'del') {
           const sX = currentX;
           currentX = await drawTextSafe(t.text, currentX, baseStyle.size, getFontForState(bold, italic), baseStyle.color, maxWidth, x, baseStyle.lineHeight);
-          page.drawLine({ start: { x: sX, y: y - baseStyle.size + (baseStyle.size/3) }, end: { x: currentX, y: y - baseStyle.size + (baseStyle.size/3) }, thickness: 0.5, color: baseStyle.color });
+          page.drawLine({ start: { x: sX, y: y - baseStyle.size + (baseStyle.size / 3) }, end: { x: currentX, y: y - baseStyle.size + (baseStyle.size / 3) }, thickness: 0.5, color: baseStyle.color });
         } else if (t.type === 'codespan') {
-          const w = safeWidth(fonts.mono, t.text, baseStyle.size * 0.9);
-          if (currentX + w > x + maxWidth) { y -= baseStyle.size * baseStyle.lineHeight; currentX = x; checkPageEdge(baseStyle.size * baseStyle.lineHeight); }
-          page.drawRectangle({ x: currentX - 1, y: y - baseStyle.size - 1, width: w + 2, height: baseStyle.size + 2, color: rgb(0.95, 0.96, 0.97) });
-          await drawTextSafe(t.text, currentX, baseStyle.size * 0.9, fonts.mono, colors.primary, maxWidth, x, 1.0);
-          currentX += w + 2;
+          const cw = safeWidth(fonts.regular, t.text, baseStyle.size * 0.9);
+          if (currentX + cw > x + maxWidth) { y -= baseStyle.size * baseStyle.lineHeight; currentX = x; checkPageEdge(baseStyle.size * baseStyle.lineHeight); }
+          page.drawRectangle({ x: currentX - 2, y: y - baseStyle.size - 2, width: cw + 4, height: baseStyle.size + 4, color: rgb(0.93, 0.95, 0.98) });
+          await drawTextSafe(t.text, currentX, baseStyle.size * 0.9, fonts.regular, rgb(0.1, 0.3, 0.6), maxWidth, x, 1.0);
+          currentX += cw + 4;
         } else if (t.type === 'link') {
           const oldCol = baseStyle.color; baseStyle.color = colors.primary;
           await processTokens(t.tokens || []); baseStyle.color = oldCol;
         } else if (t.type === 'image') {
-          await drawImageSafe(t.href, maxWidth);
+          await drawImageSafe(t.href, maxWidth, x);
           currentX = x;
         } else if (t.type === 'text' || t.type === 'escape') {
           if (t.tokens && t.tokens.length > 0) await processTokens(t.tokens);
@@ -200,130 +211,144 @@ export async function exportToPdf(markdown: string, filename = "document.pdf") {
     await processTokens(tokens);
   }
 
-  async function renderList(items: any[], level = 0, ordered = false) {
+  async function renderList(items: any[], level = 0, ordered = false, startX: number, width: number) {
     let index = 1;
     for (const item of items) {
       const indent = level * 24;
       checkPageEdge(styles.p.size * styles.p.lineHeight);
-      
-      const bX = margin + indent;
-      if (ordered) {
-        await drawTextSafe(`${index}. `, bX, styles.p.size, fonts.regular, colors.subtle, contentWidth, bX);
-      } else {
-        // Draw vector bullet instead of text bullet to avoid encoding crash
-        page.drawCircle({ x: bX + 5, y: y - (styles.p.size/2) - 2, size: 2.5, color: colors.subtle });
+      const bX = startX + indent;
+      if (ordered) await drawTextSafe(`${index}. `, bX, styles.p.size, fonts.regular, colors.subtle, width, bX);
+      else {
+        // Center bullets exactly like emojis
+        const bRad = 2.5;
+        const bY = (y - styles.p.size) + (styles.p.size * 0.35);
+        page.drawCircle({ x: bX + 5, y: bY, size: bRad, color: colors.subtle });
       }
-      
       let xOff = indent + 18;
-      
       if (item.task) {
-        const cbS = 9; const cbY = y - styles.p.size + 1;
-        page.drawRectangle({ x: margin + xOff, y: cbY, width: cbS, height: cbS, borderWidth: 0.8, borderColor: colors.subtle });
+        const cbS = 9; const cbY = (y - styles.p.size) + (styles.p.size * 0.35) - (cbS / 2);
+        page.drawRectangle({ x: startX + xOff, y: cbY, width: cbS, height: cbS, borderWidth: 0.8, borderColor: colors.subtle });
         if (item.checked) {
-          page.drawLine({ start: { x: margin + xOff + 2, y: cbY + 4 }, end: { x: margin + xOff + 4, y: cbY + 2 }, thickness: 1.2, color: colors.primary });
-          page.drawLine({ start: { x: margin + xOff + 4, y: cbY + 2 }, end: { x: margin + xOff + 7, y: cbY + 7 }, thickness: 1.2, color: colors.primary });
+          page.drawLine({ start: { x: startX + xOff + 2, y: cbY + 4 }, end: { x: startX + xOff + 4, y: cbY + 2 }, thickness: 1.2, color: colors.primary });
+          page.drawLine({ start: { x: startX + xOff + 4, y: cbY + 2 }, end: { x: startX + xOff + 7, y: cbY + 7 }, thickness: 1.2, color: colors.primary });
         }
         xOff += cbS + 10;
       }
-
-      await renderInlineTokens(item.tokens || [], margin + xOff, contentWidth - xOff, styles.p);
+      await renderInlineTokens(item.tokens || [], startX + xOff, width - xOff, styles.p);
       y -= styles.p.size * styles.p.lineHeight;
-      
       if (item.tokens) {
         const sub = item.tokens.find((t: any) => t.type === 'list');
-        if (sub) await renderList(sub.items, level + 1, sub.ordered);
+        if (sub) await renderList(sub.items, level + 1, sub.ordered, startX, width);
       }
       index++;
     }
   }
 
-  const tokens = marked.lexer(markdown);
-  for (const t of tokens) {
-    switch (t.type) {
-      case 'heading':
-        const hS = t.depth === 1 ? styles.h1 : t.depth === 2 ? styles.h2 : styles.h3;
-        checkPageEdge(hS.size + hS.spacing);
-        if (t.tokens) await renderInlineTokens(t.tokens, margin, contentWidth, hS);
-        else await drawTextSafe(t.text, margin, hS.size, hS.font, hS.color, contentWidth, margin);
-        y -= hS.spacing;
-        break;
-      case 'paragraph':
-        checkPageEdge(styles.p.size * 2.5);
-        await renderInlineTokens(t.tokens || [], margin, contentWidth, styles.p);
-        y -= styles.p.spacing;
-        break;
-      case 'list':
-        await renderList(t.items, 0, t.ordered);
-        y -= 12;
-        break;
-      case 'code':
-        const lns = t.text.split('\n');
-        const h = lns.length * styles.mono.spacing + 30;
-        checkPageEdge(h);
-        page.drawRectangle({ x: margin - 10, y: y - h, width: contentWidth + 20, height: h, color: styles.mono.bg });
-        y -= 25;
-        for (const l of lns) {
-          await drawTextSafe(l, margin, styles.mono.size, fonts.mono, styles.mono.color, contentWidth, margin, 1.0);
-          y -= styles.mono.spacing;
+  async function renderTokens(ts: any[], startX: number, width: number) {
+    for (const t of ts) {
+      switch (t.type) {
+        case 'heading': {
+          const hS = t.depth === 1 ? styles.h1 : t.depth === 2 ? styles.h2 : styles.h3;
+          checkPageEdge(hS.size + hS.spacing);
+          if (t.tokens) await renderInlineTokens(t.tokens, startX, width, hS);
+          else await drawTextSafe(t.text, startX, hS.size, hS.font, hS.color, width, startX);
+          y -= hS.spacing;
+          break;
         }
-        y -= 20;
-        break;
-      case 'table':
-        const colW = contentWidth / t.header.length; const rowH = 28;
-        checkPageEdge((t.rows.length + 1) * rowH + 20);
-        page.drawRectangle({ x: margin, y: y - rowH, width: contentWidth, height: rowH, color: colors.headerBg });
-        for (let i = 0; i < t.header.length; i++) {
-          const oldY = y; y -= 9;
-          await drawTextSafe(t.header[i].text || String(t.header[i]), margin + i * colW + 10, 10, fonts.bold, colors.primary, colW - 20, margin + i * colW + 10, 1.0);
-          y = oldY;
+        case 'paragraph': {
+          checkPageEdge(styles.p.size * 2.5);
+          await renderInlineTokens(t.tokens || [], startX, width, styles.p);
+          y -= styles.p.spacing;
+          break;
         }
-        y -= rowH;
-        for (let ri = 0; ri < t.rows.length; ri++) {
-          const row = t.rows[ri];
-          const rowTopY = y;
-          let maxRowHeight = rowH;
-
-          // Track minY to determine how much space the row actually took
-          const getMinY = () => y; 
-          
-          if (ri % 2 === 1) {
-            // Pre-calculate if possible or just use rowH. For safety we draw a rowH stripe.
-            page.drawRectangle({ x: margin, y: rowTopY - rowH, width: contentWidth, height: rowH, color: colors.stripe });
-          }
-          
-          for (let ci = 0; ci < row.length; ci++) {
-            const cell = row[ci];
-            y = rowTopY - 9; // Reset Y to row top (minus padding) for each cell
-            if (cell.tokens) {
-              await renderInlineTokens(cell.tokens, margin + ci * colW + 10, colW - 20, { ...styles.p, size: 10 });
-            } else {
-              await drawTextSafe(cell.text || String(cell), margin + ci * colW + 10, 10, fonts.regular, colors.text, colW - 20, margin + ci * colW + 10, 1.0);
+        case 'list': {
+          await renderList(t.items, 0, t.ordered, startX, width);
+          y -= 25;
+          break;
+        }
+        case 'blockquote': {
+          const bStart = y; const bIndent = 26;
+          await renderTokens(t.tokens || [], startX + bIndent, width - bIndent);
+          page.drawLine({ start: { x: startX + 10, y: bStart + 10 }, end: { x: startX + 10, y: y + 5 }, thickness: 3, color: colors.primary });
+          y -= 30;
+          break;
+        }
+        case 'image': await drawImageSafe(t.href, width, startX); y -= 20; break;
+        case 'code': {
+          const lns = t.text.split('\n');
+          const headerH = 24; const initialY = y;
+          y -= 10;
+          let tempY = y - headerH - 15;
+          for (const l of lns) {
+            let cx = startX; const words = l.split(/(\s+)/);
+            for (const w of words) {
+              const ww = safeWidth(fonts.mono, w, styles.mono.size);
+              if (cx + ww > startX + width && w.trim().length > 0) { tempY -= styles.mono.spacing; cx = startX; }
+              cx += ww;
             }
-            const cellBottomY = y - 10; // 10 is font size
-            const reachedH = rowTopY - cellBottomY + 5;
-            if (reachedH > maxRowHeight) maxRowHeight = reachedH;
+            tempY -= styles.mono.spacing;
           }
-          y = rowTopY - maxRowHeight;
+          const totalH = y - tempY + 15;
+          checkPageEdge(totalH);
+          page.drawRectangle({ x: startX - 10, y: y - totalH, width: width + 20, height: totalH, color: styles.mono.bg });
+          const barY = y - headerH;
+          page.drawRectangle({ x: startX - 10, y: barY, width: width + 20, height: headerH, color: rgb(0.12, 0.15, 0.22) });
+          const btnRadius = 2.5; const btnY = barY + headerH / 2;
+          page.drawCircle({ x: startX + 5, y: btnY, size: btnRadius, color: rgb(0.98, 0.39, 0.33) });
+          page.drawCircle({ x: startX + 13, y: btnY, size: btnRadius, color: rgb(0.98, 0.74, 0.18) });
+          page.drawCircle({ x: startX + 21, y: btnY, size: btnRadius, color: rgb(0.15, 0.79, 0.26) });
+          if (t.lang) {
+            const langTxt = t.lang.toUpperCase(); const langSz = 7;
+            const langW = fonts.bold.widthOfTextAtSize(langTxt, langSz);
+            page.drawText(langTxt, { x: startX + width - langW - 5, y: barY + (headerH - langSz) / 2, size: langSz, font: fonts.bold, color: rgb(0.4, 0.45, 0.55) });
+          }
+          y -= headerH + 15;
+          for (const l of lns) { await drawTextSafe(l, startX, styles.mono.size, fonts.mono, styles.mono.color, width, startX, 1.0); y -= styles.mono.spacing; }
+          y -= 35;
+          break;
         }
-        y -= 20;
-        break;
-      case 'hr':
-        checkPageEdge(20);
-        page.drawLine({ start: { x: margin, y: y - 10 }, end: { x: width - margin, y: y - 10 }, thickness: 1, color: colors.border });
-        y -= 30;
-        break;
-      case 'blockquote':
-        const startY = y;
-        await renderInlineTokens(t.tokens || [], margin + 26, contentWidth - 26, { ...styles.p, color: colors.subtle });
-        page.drawLine({ start: { x: margin + 10, y: startY }, end: { x: margin + 10, y: y + 10 }, thickness: 3, color: colors.primary });
-        y -= 10;
-        break;
-      case 'image':
-        await drawImageSafe(t.href, contentWidth);
-        break;
+        case 'table': {
+          const colW = width / t.header.length; const rowH = 28;
+          const drawHeader = async () => {
+            page.drawRectangle({ x: startX, y: y - rowH, width: width, height: rowH, color: colors.headerBg });
+            for (let i = 0; i < t.header.length; i++) {
+              const oY = y; y -= 9;
+              await drawTextSafe(t.header[i].text || String(t.header[i]), startX + i * colW + 10, 10, fonts.bold, colors.primary, colW - 20, startX + i * colW + 10, 1.0);
+              y = oY;
+            }
+            y -= rowH;
+          };
+          await drawHeader();
+          for (let ri = 0; ri < t.rows.length; ri++) {
+            if (checkPageEdge(rowH + 20)) await drawHeader();
+            const row = t.rows[ri]; const rTop = y; let rowMaxH = rowH;
+            if (ri % 2 === 1) page.drawRectangle({ x: startX, y: rTop - rowH, width: width, height: rowH, color: colors.stripe });
+            // Track max height across all cells in this row
+            for (let ci = 0; ci < row.length; ci++) {
+              y = rTop - 9;
+              const cell = row[ci];
+              if (cell.tokens) await renderInlineTokens(cell.tokens, startX + ci * colW + 10, colW - 20, { ...styles.p, size: 10 });
+              else await drawTextSafe(cell.text || String(cell), startX + ci * colW + 10, 10, fonts.regular, colors.text, colW - 20, startX + ci * colW + 10, 1.0);
+              const cellH = rTop - y + 5;
+              if (cellH > rowMaxH) rowMaxH = cellH;
+            }
+            y = rTop - rowMaxH;
+          }
+          y -= 30;
+          break;
+        }
+        case 'hr': {
+          checkPageEdge(20);
+          page.drawLine({ start: { x: startX, y: y - 10 }, end: { x: startX + width, y: y - 10 }, thickness: 1, color: colors.border });
+          y -= 35;
+          break;
+        }
+      }
     }
   }
 
+  const tokens = marked.lexer(markdown);
+  await renderTokens(tokens, margin, contentWidth);
   addFooter();
   const pdfBytes = await pdfDoc.save();
   const blob = new Blob([pdfBytes as any], { type: 'application/pdf' });
