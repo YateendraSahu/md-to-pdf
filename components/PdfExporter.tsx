@@ -157,7 +157,7 @@ const MarkdownBlocks = ({ tokens, inList = false }: { tokens: any[]; inList?: bo
           case 'list': return (
             <View key={i} style={styles.list}>
               {t.items.map((item: any, idx: number) => (
-                <View key={idx} style={styles.listItem}>
+                <View key={idx} style={styles.listItem} wrap={false}>
                   <Text style={styles.bullet}>{t.ordered ? `${t.start !== undefined ? t.start + idx : idx + 1}.` : '•'}</Text>
                   <View style={styles.listContent}>
                     <MarkdownBlocks tokens={item.tokens || []} inList={true} />
@@ -179,13 +179,13 @@ const MarkdownBlocks = ({ tokens, inList = false }: { tokens: any[]; inList?: bo
           );
           case 'table': return (
             <View key={i} style={styles.table}>
-              <View style={[styles.tableRow, styles.tableHeader]}>
+              <View style={[styles.tableRow, styles.tableHeader]} wrap={false}>
                 {t.header?.map((h: any, hi: number) => (
                   <Text key={hi} style={[styles.tableCell, styles.tableCellHeader]}>{h.text}</Text>
                 ))}
               </View>
               {t.rows?.map((row: any, ri: number) => (
-                <View key={ri} style={[styles.tableRow, ri % 2 === 1 ? { backgroundColor: '#fafbfd' } : {}]}>
+                <View key={ri} style={[styles.tableRow, ri % 2 === 1 ? { backgroundColor: '#fafbfd' } : {}]} wrap={false}>
                   {row.map((c: any, ci: number) => (
                     <View key={ci} style={styles.tableCell}>
                       <Text><MarkdownText tokens={c.tokens || []} /></Text>
