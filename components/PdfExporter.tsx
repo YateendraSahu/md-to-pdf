@@ -167,8 +167,8 @@ const MarkdownBlocks = ({ tokens, inList = false }: { tokens: any[]; inList?: bo
             </View>
           );
           case 'code': return (
-            <View key={i} style={styles.codeBlock} wrap={false}>
-              <View style={styles.codeHeader}>
+            <View key={i} style={styles.codeBlock}>
+              <View style={styles.codeHeader} wrap={false}>
                 <View style={[styles.dot, { backgroundColor: '#ff5f56' }]} />
                 <View style={[styles.dot, { backgroundColor: '#ffbd2e' }]} />
                 <View style={[styles.dot, { backgroundColor: '#27c93f' }]} />
@@ -181,7 +181,9 @@ const MarkdownBlocks = ({ tokens, inList = false }: { tokens: any[]; inList?: bo
             <View key={i} style={styles.table}>
               <View style={[styles.tableRow, styles.tableHeader]} wrap={false}>
                 {t.header?.map((h: any, hi: number) => (
-                  <Text key={hi} style={[styles.tableCell, styles.tableCellHeader]}>{h.text}</Text>
+                  <Text key={hi} style={[styles.tableCell, styles.tableCellHeader]}>
+                    {h.tokens && h.tokens.length > 0 ? <MarkdownText tokens={h.tokens} /> : h.text}
+                  </Text>
                 ))}
               </View>
               {t.rows?.map((row: any, ri: number) => (
