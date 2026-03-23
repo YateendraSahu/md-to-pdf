@@ -37,6 +37,7 @@ export default function MarkdownEditor() {
   const [view, setView] = useState<"edit" | "preview">("edit");
   const [previewHtml, setPreviewHtml] = useState("");
   const [isPreviewFocused, setIsPreviewFocused] = useState(false);
+  const [isClearModalOpen, setIsClearModalOpen] = useState(false);
   const previewRef = useRef<HTMLDivElement>(null);
 
   const handlePreviewInput = (e: React.FormEvent<HTMLDivElement>) => {
@@ -76,13 +77,11 @@ export default function MarkdownEditor() {
   };
 
   const handleClear = () => {
-    if (confirm("Are you sure you want to clear all content?")) {
-      setMarkdown("");
-    }
+    setIsClearModalOpen(true);
   };
 
   return (
-    <main className="min-h-screen bg-[#f8fafc] p-4 md:p-8 font-sans selection:bg-blue-100">
+    <main className="h-screen bg-[#f8fafc] p-2 md:p-4 font-sans selection:bg-blue-100 flex flex-col overflow-hidden">
       <style jsx global>{`
         .pdf-preview {
           font-family: 'Inter', sans-serif;
@@ -107,36 +106,75 @@ export default function MarkdownEditor() {
         .pdf-preview hr { border: 0; border-top: 1px solid #e2e8f0; margin: 2rem 0; }
       `}</style>
 
-      <div className="max-w-[98%] mx-auto">
-        <header className="mb-6 flex flex-col md:flex-row md:items-end justify-between gap-4">
-          <div>
-            <h1 className="text-4xl font-black tracking-tight text-[#0f172a]">
-              MD<span className="text-blue-600">.</span>PDF
+      <div className="max-w-[100%] md:max-w-[98%] mx-auto w-full flex flex-col flex-1 min-h-0 relative">
+        <header className="mb-2 shrink-0 flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div className="flex items-center justify-between">
+            <h1 className="text-xl font-black tracking-tight text-[#0f172a]">
+              MD<span className="text-blue-600">to</span>PDF
             </h1>
           </div>
 
-          <div className="flex lg:hidden gap-2 bg-white p-1 rounded-xl shadow-sm border border-slate-200">
-            <button
-              onClick={() => setView("edit")}
-              className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${view === "edit" ? "bg-slate-900 text-white shadow-md" : "text-slate-500 hover:text-slate-900"
-                }`}
-            >
-              Edit
-            </button>
-            <button
-              onClick={() => setView("preview")}
-              className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${view === "preview" ? "bg-slate-900 text-white shadow-md" : "text-slate-500 hover:text-slate-900"
-                }`}
-            >
-              Preview
-            </button>
+          <div className="flex flex-col md:flex-row items-stretch md:items-center gap-2 md:gap-3">
+            <div className="flex items-center px-3 py-2 bg-white border border-slate-200 rounded-xl focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/10 transition-all shadow-sm">
+              <input
+                type="text"
+                value={filename}
+                onChange={(e) => setFilename(e.target.value)}
+                className="bg-transparent text-sm font-bold text-slate-700 outline-none w-full md:w-40"
+                placeholder="filename"
+              />
+              <span className="text-slate-400 font-bold ml-1">.pdf</span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <div className="flex lg:hidden flex-1 gap-1 bg-white p-1 rounded-xl shadow-sm border border-slate-200">
+                <button
+                  onClick={() => setView("edit")}
+                  className={`flex-1 px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${view === "edit" ? "bg-slate-900 text-white shadow-md" : "text-slate-500 hover:text-slate-900"
+                    }`}
+                >
+                  Edit
+                </button>
+                <button
+                  onClick={() => setView("preview")}
+                  className={`flex-1 px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${view === "preview" ? "bg-slate-900 text-white shadow-md" : "text-slate-500 hover:text-slate-900"
+                    }`}
+                >
+                  View
+                </button>
+              </div>
+
+              <button
+                onClick={handleExport}
+                disabled={exporting || !markdown}
+                className="flex items-center justify-center shrink-0 gap-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white font-bold px-4 py-2 rounded-xl shadow-sm hover:shadow transition-all active:scale-95 disabled:scale-100 disabled:shadow-none"
+              >
+                {exporting ? (
+                  <>
+                    <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <span>Exporting</span>
+                  </>
+                ) : (
+                  <>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
+                    </svg>
+                    <span className="hidden sm:inline">Export PDF</span>
+                    <span className="inline sm:hidden">Export</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </header>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          <div className={`relative group ${view === "preview" ? "hidden lg:block" : "block"}`}>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-8 flex-1 min-h-0 pb-2 md:pb-2">
+          <div className={`relative group h-full ${view === "preview" ? "hidden lg:block" : "block"}`}>
             <textarea
-              className="w-full h-[calc(100vh-250px)] min-h-[500px] p-6 font-mono text-sm leading-relaxed text-slate-800 border-2 border-slate-200 rounded-2xl bg-white shadow-sm focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all outline-none resize-none"
+              className="w-full h-full p-4 md:p-6 font-mono text-sm leading-relaxed text-slate-800 border-2 border-slate-200 rounded-2xl bg-white shadow-sm focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all outline-none resize-none"
               value={markdown}
               onChange={(e) => setMarkdown(e.target.value)}
               placeholder="Start typing your content..."
@@ -152,9 +190,9 @@ export default function MarkdownEditor() {
             </button>
           </div>
 
-          <div 
+          <div
             ref={previewRef}
-            className={`w-full h-[calc(100vh-250px)] min-h-[500px] p-8 overflow-y-auto border-2 border-slate-200 rounded-2xl bg-white shadow-sm pdf-preview outline-none ${view === "edit" ? "hidden lg:block" : "block"}`}
+            className={`w-full h-full p-6 md:p-8 overflow-y-auto border-2 border-slate-200 rounded-2xl bg-white shadow-sm pdf-preview outline-none ${view === "edit" ? "hidden lg:block" : "block"}`}
             contentEditable={true}
             suppressContentEditableWarning={true}
             onFocus={() => setIsPreviewFocused(true)}
@@ -163,47 +201,41 @@ export default function MarkdownEditor() {
           />
         </div>
 
-        <div className="mt-6">
-
-          <footer className="flex flex-col md:flex-row items-center justify-center gap-4 bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
-            <div className="flex items-center gap-2 group">
-              <div className="flex items-center px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/10 transition-all">
-                <input
-                  type="text"
-                  value={filename}
-                  onChange={(e) => setFilename(e.target.value)}
-                  className="bg-transparent text-sm font-bold text-slate-700 outline-none w-48"
-                  placeholder="filename"
-                />
-                <span className="text-slate-400 font-bold ml-1">.pdf</span>
-              </div>
-            </div>
-
-            <button
-              onClick={handleExport}
-              disabled={exporting || !markdown}
-              className="w-full md:w-auto group relative flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white font-bold px-8 py-3 rounded-xl shadow-lg shadow-blue-500/20 hover:shadow-blue-500/40 transition-all active:scale-95 disabled:scale-100 disabled:shadow-none overflow-hidden"
-            >
-              {exporting ? (
-                <>
-                  <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  <span>Exporting...</span>
-                </>
-              ) : (
-                <>
-                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
-                  </svg>
-                  <span>Export to PDF</span>
-                </>
-              )}
-            </button>
-          </footer>
-        </div>
       </div>
+
+      {isClearModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+            onClick={() => setIsClearModalOpen(false)}
+          ></div>
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
+            <div className="p-6">
+              <h3 className="text-xl font-bold text-slate-900 mb-2">Clear Document</h3>
+              <p className="text-slate-500 text-sm">
+                Are you sure you want to clear all content? This action cannot be undone.
+              </p>
+            </div>
+            <div className="flex bg-slate-50 p-4 gap-3 justify-end rounded-b-2xl border-t border-slate-100">
+              <button
+                onClick={() => setIsClearModalOpen(false)}
+                className="px-4 py-2 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-200 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  setMarkdown("");
+                  setIsClearModalOpen(false);
+                }}
+                className="px-4 py-2 rounded-xl text-sm font-bold text-white bg-red-500 hover:bg-red-600 shadow-sm shadow-red-500/20 transition-all active:scale-95"
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
